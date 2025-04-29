@@ -1,3 +1,4 @@
+import bcrypt from 'bcryptjs';
 import React, { useState } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';  // Importando useNavigate
@@ -12,11 +13,16 @@ const Login = ({ setToken }) => {
     e.preventDefault();
 
     try {
-      const response = await axios.post('http://localhost:5000/login', { username, password });
-      setToken(response.data.token);
-      localStorage.setItem('token', response.data.token);  // Salva o token no localStorage
+      const response = await axios.get(`http://localhost:5000/users?username=${username}`);
+      const user = response.data[0];
 
-      // Redireciona para o Dashboard após o login
+      if (!user || !bcrypt.compareSync(password, user.password)) {
+        setError('Erro ao fazer login');
+        return;
+      }
+
+      setToken(user.token);
+      localStorage.setItem('token', user.token);
       navigate('/dashboard');  // Redirecionamento para a página /dashboard
     } catch (err) {
       setError('Erro ao fazer login');

@@ -2,7 +2,6 @@ const express = require('express');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const cors = require('cors');
-const db = require('./database');
 
 const app = express();
 const PORT = 5000;
@@ -14,56 +13,58 @@ app.use(cors());
 const JWT_SECRET = 'minha_chave_secreta';
 
 // Endpoint para login
-app.post('/login', (req, res) => {
+app.post('/login', async (req, res) => {
   const { username, password } = req.body;
 
-  // Procurar usuário no banco de dados
-  db.get("SELECT * FROM users WHERE username = ?", [username], (err, row) => {
-    if (err || !row) {
+  try {
+    const response = await fetch(`http://localhost:5000/users?username=${username}`);
+    const users = await response.json();
+
+    if (users.length === 0) {
       return res.status(400).json({ message: 'Usuário ou senha inválidos' });
     }
 
-    // Verificar se a senha corresponde
-    bcrypt.compare(password, row.password, (err, result) => {
-      if (!result) {
-        return res.status(400).json({ message: 'Usuário ou senha inválidos' });
-      }
+    const user = users[0];
+    const isPasswordValid = await bcrypt.compare(password, user.password);
 
-      // Gerar o token JWT
-      const token = jwt.sign({ id: row.id, username: row.username }, JWT_SECRET, {
-        expiresIn: '1h', // Expiração do token
-      });
+    if (!isPasswordValid) {
+      return res.status(400).json({ message: 'Usuário ou senha inválidos' });
+    }
 
-      return res.json({ token });
+    const token = jwt.sign({ id: user.id, username: user.username }, JWT_SECRET, {
+      expiresIn: '1h',
     });
-  });
+
+    res.json({ token });
+  } catch (err) {
+    res.status(500).json({ message: 'Erro ao fazer login' });
+  }
 });
 
 // Endpoint para criar novo usuário
-app.post('/register', (req, res) => {
+app.post('/register', async (req, res) => {
   const { username, password } = req.body;
 
-  // Verificar se o usuário já existe
-  db.get("SELECT * FROM users WHERE username = ?", [username], (err, row) => {
-    if (row) {
+  try {
+    const response = await fetch(`http://localhost:5000/users?username=${username}`);
+    const users = await response.json();
+
+    if (users.length > 0) {
       return res.status(400).json({ message: 'Usuário já existe' });
     }
 
-    // Criptografar a senha
-    bcrypt.hash(password, 10, (err, hashedPassword) => {
-      if (err) {
-        return res.status(500).json({ message: 'Erro ao criptografar a senha' });
-      }
+    const hashedPassword = await bcrypt.hash(password, 10);
 
-      // Inserir o novo usuário no banco de dados
-      db.run("INSERT INTO users (username, password) VALUES (?, ?)", [username, hashedPassword], function (err) {
-        if (err) {
-          return res.status(500).json({ message: 'Erro ao criar usuário' });
-        }
-        res.status(201).json({ message: 'Usuário criado com sucesso' });
-      });
+    await fetch('http://localhost:5000/users', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password: hashedPassword }),
     });
-  });
+
+    res.status(201).json({ message: 'Usuário criado com sucesso' });
+  } catch (err) {
+    res.status(500).json({ message: 'Erro ao criar usuário' });
+  }
 });
 
 // Iniciar o servidor
